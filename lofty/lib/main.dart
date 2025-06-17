@@ -1,192 +1,93 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 void main() {
-  runApp(LoftInventoryApp());
+  runApp(MyApp());
 }
 
-class LoftInventoryApp extends StatelessWidget {
+class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      theme: ThemeData.light(),
-      darkTheme: ThemeData.dark(),
+      title: 'Inventory App',
+      theme: ThemeData(
+        brightness: Brightness.light,
+        primarySwatch: Colors.blue,
+      ),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        primarySwatch: Colors.blue,
+      ),
       themeMode: ThemeMode.system,
-      home: SplashScreen(),
+      home: InventoryListScreen(),
     );
   }
 }
 
-// Splash screen that shows "NJSharp" centered at the bottom
-class SplashScreen extends StatefulWidget {
+class InventoryListScreen extends StatefulWidget {
   @override
-  _SplashScreenState createState() => _SplashScreenState();
+  _InventoryListScreenState createState() => _InventoryListScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _InventoryListScreenState extends State<InventoryListScreen> {
+  List<InventoryItem> inventory = [];
+  List<InventoryItem> filteredInventory = [];
+  TextEditingController searchController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
-    // Wait for 1 second before navigating to the main app
-    Timer(Duration(seconds: 1), () {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => LoftInventoryHomeWrapper()),
-      );
-    });
+    loadInventory();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Centered text at the bottom of the screen
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 40.0),
-              child: Text(
-                'NJSharp',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Wrapper for the home screen to manage theme toggling
-class LoftInventoryHomeWrapper extends StatefulWidget {
-  @override
-  _LoftInventoryHomeWrapperState createState() => _LoftInventoryHomeWrapperState();
-}
-
-class _LoftInventoryHomeWrapperState extends State<LoftInventoryHomeWrapper> {
-  ThemeMode _themeMode = ThemeMode.light;
-
-  void _toggleTheme() {
-    setState(() {
-      _themeMode = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData.light(),
-      darkTheme: ThemeData.dark(),
-      themeMode: _themeMode,
-      home: LoftInventoryHome(toggleTheme: _toggleTheme, themeMode: _themeMode),
-    );
-  }
-}
-
-// Main app content after the splash screen
-class LoftInventoryHome extends StatefulWidget {
-  final Function toggleTheme;
-  final ThemeMode themeMode;
-
-  LoftInventoryHome({required this.toggleTheme, required this.themeMode});
-
-  @override
-  _LoftInventoryHomeState createState() => _LoftInventoryHomeState();
-}
-
-class _LoftInventoryHomeState extends State<LoftInventoryHome> {
-  List<LoftItem> items = [];
-  int _selectedIndex = 0;
-
-  // Controllers for the Add Item form
-  final _nameController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  final _categoryController = TextEditingController();
-  final _locationController = TextEditingController();
-
-  void _addItem(LoftItem item) {
-    setState(() {
-      items.add(item);
-    });
-  }
-
-  // Method to build the screen based on selected index
-  Widget _buildBody() {
-    if (_selectedIndex == 0) {
-      // Item List Screen
-      return items.isEmpty
-          ? Center(child: Text('No items yet. Add some!'))
-          : ListView.builder(
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                return ListTile(
-                  title: Text(items[index].name),
-                  subtitle: Text('Location: ${items[index].location}'),
-                );
-              },
-            );
-    } else if (_selectedIndex == 1) {
-      // Add Item Screen
-      return Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: InputDecoration(labelText: 'Item Name'),
-            ),
-            TextField(
-              controller: _descriptionController,
-              decoration: InputDecoration(labelText: 'Description'),
-            ),
-            TextField(
-              controller: _categoryController,
-              decoration: InputDecoration(labelText: 'Category'),
-            ),
-            TextField(
-              controller: _locationController,
-              decoration: InputDecoration(labelText: 'Location'),
-            ),
-            SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                final newItem = LoftItem(
-                  name: _nameController.text,
-                  description: _descriptionController.text,
-                  category: _categoryController.text,
-                  location: _locationController.text,
-                );
-                _addItem(newItem);
-
-                // Clear the text fields
-                _nameController.clear();
-                _descriptionController.clear();
-                _categoryController.clear();
-                _locationController.clear();
-
-                // Switch to the item list after adding an item
-                setState(() {
-                  _selectedIndex = 0;
-                });
-              },
-              child: Text('Add Item'),
-            ),
-          ],
-        ),
-      );
+  loadInventory() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String>? inventoryList = prefs.getStringList('inventory');
+    if (inventoryList != null) {
+      setState(() {
+        inventory = inventoryList.map((item) => InventoryItem.fromJson(json.decode(item))).toList();
+        filteredInventory = List.from(inventory);
+      });
     } else {
-      // Search Screen
-      return SearchItemsScreen(items: items);
+      filteredInventory = List.from(inventory);
     }
   }
 
-  // Method to handle bottom navigation tap
-  void _onItemTapped(int index) {
+  saveInventory() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String> inventoryList = inventory.map((item) => json.encode(item.toJson())).toList();
+    prefs.setStringList('inventory', inventoryList);
+  }
+
+  void addItem(InventoryItem item) {
     setState(() {
-      _selectedIndex = index;
+      inventory.add(item);
+      filteredInventory = List.from(inventory);
+      saveInventory();
+    });
+  }
+
+  void updateItem(InventoryItem updatedItem) {
+    setState(() {
+      int index = inventory.indexWhere((item) => item.name == updatedItem.name);
+      if (index != -1) {
+        inventory[index] = updatedItem;
+        filteredInventory = List.from(inventory);
+        saveInventory();
+      }
+    });
+  }
+
+  void filterInventory(String query) {
+    setState(() {
+      if (query.isEmpty) {
+        filteredInventory = List.from(inventory);
+      } else {
+        filteredInventory = inventory
+            .where((item) => item.name.toLowerCase().contains(query.toLowerCase()))
+            .toList();
+      }
     });
   }
 
@@ -194,98 +95,152 @@ class _LoftInventoryHomeState extends State<LoftInventoryHome> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Loft Inventory'),
-        actions: [
-          IconButton(
-            icon: Icon(widget.themeMode == ThemeMode.light ? Icons.dark_mode : Icons.light_mode),
-            onPressed: () {
-              widget.toggleTheme();
-            },
+        title: Text('Inventory List'),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: searchController,
+              decoration: InputDecoration(
+                labelText: 'Search',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: filterInventory,
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: filteredInventory.length,
+              itemBuilder: (context, index) {
+                return ListTile(
+                  title: Text(filteredInventory[index].name),
+                  subtitle: Text('Quantity: ${filteredInventory[index].quantity}'),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AddItemScreen(
+                          addItem: addItem,
+                          updateItem: updateItem,
+                          itemToEdit: filteredInventory[index],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
-      body: _buildBody(),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.list),
-            label: 'Items',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.add),
-            label: 'Add Item',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'Search',
-          ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AddItemScreen(
+                addItem: addItem,
+                updateItem: updateItem,
+              ),
+            ),
+          );
+        },
+        child: Icon(Icons.add),
       ),
     );
   }
 }
 
-class SearchItemsScreen extends StatefulWidget {
-  final List<LoftItem> items;
+class AddItemScreen extends StatefulWidget {
+  final Function(InventoryItem) addItem;
+  final Function(InventoryItem)? updateItem;
+  final InventoryItem? itemToEdit;
 
-  SearchItemsScreen({required this.items});
+  AddItemScreen({required this.addItem, this.updateItem, this.itemToEdit});
 
   @override
-  _SearchItemsScreenState createState() => _SearchItemsScreenState();
+  _AddItemScreenState createState() => _AddItemScreenState();
 }
 
-class _SearchItemsScreenState extends State<SearchItemsScreen> {
-  String query = '';
+class _AddItemScreenState extends State<AddItemScreen> {
+  TextEditingController nameController = TextEditingController();
+  TextEditingController quantityController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.itemToEdit != null) {
+      nameController.text = widget.itemToEdit!.name;
+      quantityController.text = widget.itemToEdit!.quantity.toString();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final filteredItems = widget.items
-        .where((item) => item.name.toLowerCase().contains(query.toLowerCase()))
-        .toList();
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: TextField(
-            onChanged: (value) {
-              setState(() {
-                query = value;
-              });
-            },
-            decoration: InputDecoration(labelText: 'Search by Name'),
-          ),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.itemToEdit == null ? 'Add Item' : 'Edit Item'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: InputDecoration(labelText: 'Item Name'),
+            ),
+            TextField(
+              controller: quantityController,
+              decoration: InputDecoration(labelText: 'Quantity'),
+              keyboardType: TextInputType.number,
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                String name = nameController.text;
+                int quantity = int.tryParse(quantityController.text) ?? 0;
+                if (name.isNotEmpty && quantity > 0) {
+                  InventoryItem newItem = InventoryItem(name: name, quantity: quantity);
+                  if (widget.itemToEdit == null) {
+                    widget.addItem(newItem);
+                  } else {
+                    widget.updateItem!(newItem);
+                  }
+                  Navigator.pop(context);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Please enter a valid name and quantity.')),
+                  );
+                }
+              },
+              child: Text(widget.itemToEdit == null ? 'Add Item' : 'Update Item'),
+            ),
+          ],
         ),
-        Expanded(
-          child: filteredItems.isEmpty
-              ? Center(child: Text('No items found.'))
-              : ListView.builder(
-                  itemCount: filteredItems.length,
-                  itemBuilder: (context, index) {
-                    return ListTile(
-                      title: Text(filteredItems[index].name),
-                      subtitle: Text('Location: ${filteredItems[index].location}'),
-                    );
-                  },
-                ),
-        ),
-      ],
+      ),
     );
   }
 }
 
-class LoftItem {
+class InventoryItem {
   String name;
-  String description;
-  String category;
-  String location;
+  int quantity;
 
-  LoftItem({
-    required this.name,
-    required this.description,
-    required this.category,
-    required this.location,
-  });
+  InventoryItem({required this.name, required this.quantity});
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'quantity': quantity,
+    };
+  }
+
+  factory InventoryItem.fromJson(Map<String, dynamic> json) {
+    return InventoryItem(
+      name: json['name'],
+      quantity: json['quantity'],
+    );
+  }
 }
