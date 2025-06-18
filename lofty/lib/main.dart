@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
@@ -7,8 +8,8 @@ const Color njPrimary = Color(0xFFA6C4DC);      // Powder Blue
 const Color njSecondary = Color(0xFFBDBAC3);    // French Grey
 const Color njTertiary = Color(0xFF48495D);     // Charcoal
 const Color njError = Color(0xFFFF453A);        // Red
-const Color njBackground = Color(0xFFA6C4DC);   // Powder Blue
-const Color njSurface = Color(0xFFFFFFFF);      // White surface
+const Color njBackground = Color(0xFFE8CDAF);   // French Grey
+const Color njSurface = Color(0xFFE8CDAF);      // White surface
 const Color njOnPrimary = Color(0xFFFFFFFF);    // On blue
 const Color njOnSecondary = Color(0xFF000000);  // On green
 const Color njOnTertiary = Color(0xFF000000);   // On orange
@@ -39,6 +40,15 @@ class _MyAppState extends State<MyApp> {
     _loadTheme();
   }
 
+  void _setSystemUIOverlayStyle(Brightness brightness) {
+    // Set system status bar (clock, icons) to contrast with theme
+    SystemChrome.setSystemUIOverlayStyle(
+      brightness == Brightness.dark
+          ? SystemUiOverlayStyle.light
+          : SystemUiOverlayStyle.dark,
+    );
+  }
+
   void _loadTheme() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? themeString = prefs.getString('themeMode');
@@ -51,6 +61,13 @@ class _MyAppState extends State<MyApp> {
         _themeMode = ThemeMode.system;
       }
     });
+    // Set initial system UI overlay style
+    final brightness = _themeMode == ThemeMode.dark
+        ? Brightness.dark
+        : _themeMode == ThemeMode.light
+            ? Brightness.light
+            : WidgetsBinding.instance.window.platformBrightness;
+    _setSystemUIOverlayStyle(brightness);
   }
 
   void _setTheme(ThemeMode mode) async {
@@ -60,15 +77,25 @@ class _MyAppState extends State<MyApp> {
     });
     if (mode == ThemeMode.light) {
       prefs.setString('themeMode', 'light');
+      _setSystemUIOverlayStyle(Brightness.light);
     } else if (mode == ThemeMode.dark) {
       prefs.setString('themeMode', 'dark');
+      _setSystemUIOverlayStyle(Brightness.dark);
     } else {
       prefs.setString('themeMode', 'system');
+      // Use device brightness for system theme
+      final platformBrightness = WidgetsBinding.instance.window.platformBrightness;
+      _setSystemUIOverlayStyle(platformBrightness);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Listen to platform brightness changes for system theme
+    final platformBrightness = WidgetsBinding.instance.window.platformBrightness;
+    if (_themeMode == ThemeMode.system) {
+      _setSystemUIOverlayStyle(platformBrightness);
+    }
     return MaterialApp(
       title: 'Inventory App',
       theme: ThemeData(
@@ -89,8 +116,16 @@ class _MyAppState extends State<MyApp> {
         ),
         scaffoldBackgroundColor: njBackground,
         appBarTheme: AppBarTheme(
-          backgroundColor: njPrimary,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
           foregroundColor: njOnPrimary,
+          iconTheme: IconThemeData(color: njOnPrimary),
+          titleTextStyle: TextStyle(
+            color: njOnPrimary,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+          // Remove systemOverlayStyle here, handled globally above
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
@@ -126,8 +161,16 @@ class _MyAppState extends State<MyApp> {
         ),
         scaffoldBackgroundColor: njDarkBackground,
         appBarTheme: AppBarTheme(
-          backgroundColor: njPrimary,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
           foregroundColor: njOnPrimary,
+          iconTheme: IconThemeData(color: njOnPrimary),
+          titleTextStyle: TextStyle(
+            color: njOnPrimary,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+          // Remove systemOverlayStyle here, handled globally above
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
