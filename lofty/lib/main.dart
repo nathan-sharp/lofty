@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:io';
+import 'package:csv/csv.dart';
 
 // NJSharp Full Palette
 const Color njPrimary = Color(0xFFA6C4DC);      // Powder Blue
@@ -27,21 +30,24 @@ void main() {
 }
 
 class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
   @override
   State<MyApp> createState() => _MyAppState();
 }
 
 class _MyAppState extends State<MyApp> {
   ThemeMode _themeMode = ThemeMode.system;
+  String? _csvPath;
 
   @override
   void initState() {
     super.initState();
     _loadTheme();
+    _loadCsvPath();
   }
 
   void _setSystemUIOverlayStyle(Brightness brightness) {
-    // Set system status bar (clock, icons) to contrast with theme
     SystemChrome.setSystemUIOverlayStyle(
       brightness == Brightness.dark
           ? SystemUiOverlayStyle.light
@@ -61,7 +67,6 @@ class _MyAppState extends State<MyApp> {
         _themeMode = ThemeMode.system;
       }
     });
-    // Set initial system UI overlay style
     final brightness = _themeMode == ThemeMode.dark
         ? Brightness.dark
         : _themeMode == ThemeMode.light
@@ -83,15 +88,35 @@ class _MyAppState extends State<MyApp> {
       _setSystemUIOverlayStyle(Brightness.dark);
     } else {
       prefs.setString('themeMode', 'system');
-      // Use device brightness for system theme
       final platformBrightness = WidgetsBinding.instance.window.platformBrightness;
       _setSystemUIOverlayStyle(platformBrightness);
     }
   }
 
+  void _loadCsvPath() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? path = prefs.getString('csvPath');
+    if (path == null) {
+      // Set default path
+      Directory dir = await getApplicationDocumentsDirectory();
+      path = '${dir.path}/inventory.csv';
+      prefs.setString('csvPath', path);
+    }
+    setState(() {
+      _csvPath = path;
+    });
+  }
+
+  void _setCsvPath(String path) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString('csvPath', path);
+    setState(() {
+      _csvPath = path;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Listen to platform brightness changes for system theme
     final platformBrightness = WidgetsBinding.instance.window.platformBrightness;
     if (_themeMode == ThemeMode.system) {
       _setSystemUIOverlayStyle(platformBrightness);
@@ -109,8 +134,6 @@ class _MyAppState extends State<MyApp> {
           onSecondary: njOnSecondary,
           error: njError,
           onError: njOnError,
-          background: njBackground,
-          onBackground: njOnBackground,
           surface: njSurface,
           onSurface: njOnSurface,
         ),
@@ -154,8 +177,6 @@ class _MyAppState extends State<MyApp> {
           onSecondary: njOnSecondary,
           error: njError,
           onError: njOnError,
-          background: njDarkBackground,
-          onBackground: njDarkOnBackground,
           surface: njDarkSurface,
           onSurface: njDarkOnSurface,
         ),
@@ -192,6 +213,8 @@ class _MyAppState extends State<MyApp> {
       home: InventoryListScreen(
         onThemeChanged: _setTheme,
         currentThemeMode: _themeMode,
+        csvPath: _csvPath,
+        onCsvPathChanged: _setCsvPath,
       ),
     );
   }
@@ -200,8 +223,15 @@ class _MyAppState extends State<MyApp> {
 class InventoryListScreen extends StatefulWidget {
   final void Function(ThemeMode)? onThemeChanged;
   final ThemeMode? currentThemeMode;
+  final String? csvPath;
+  final void Function(String)? onCsvPathChanged;
 
-  InventoryListScreen({this.onThemeChanged, this.currentThemeMode});
+  const InventoryListScreen({super.key, 
+    this.onThemeChanged,
+    this.currentThemeMode,
+    this.csvPath,
+    this.onCsvPathChanged,
+  });
 
   @override
   _InventoryListScreenState createState() => _InventoryListScreenState();
@@ -216,8 +246,16 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   @override
   void initState() {
     super.initState();
-    loadInventory();
     searchFocusNode = FocusNode();
+    _loadInventory();
+  }
+
+  @override
+  void didUpdateWidget(covariant InventoryListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.csvPath != oldWidget.csvPath) {
+      _loadInventory();
+    }
   }
 
   @override
@@ -226,31 +264,36 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     super.dispose();
   }
 
-  loadInventory() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    List<String>? inventoryList = prefs.getStringList('inventory');
-    if (inventoryList != null) {
-      setState(() {
-        inventory = inventoryList.map((item) => InventoryItem.fromJson(json.decode(item))).toList();
-        filteredInventory = List.from(inventory);
-      });
-    } else {
-      filteredInventory = List.from(inventory);
+  Future<void> _loadInventory() async {
+    if (widget.csvPath == null) return;
+    File file = File(widget.csvPath!);
+    if (!await file.exists()) {
+      await file.writeAsString(const ListToCsvConverter().convert([]));
     }
+    final csvString = await file.readAsString();
+    final rows = const CsvToListConverter().convert(csvString);
+    setState(() {
+      inventory = rows
+          .where((row) => row.length >= 2)
+          .map((row) => InventoryItem(name: row[0].toString(), quantity: int.tryParse(row[1].toString()) ?? 0))
+          .toList();
+      filteredInventory = List.from(inventory);
+    });
   }
 
-  saveInventory() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    List<String> inventoryList = inventory.map((item) => json.encode(item.toJson())).toList();
-    prefs.setStringList('inventory', inventoryList);
+  Future<void> _saveInventory() async {
+    if (widget.csvPath == null) return;
+    File file = File(widget.csvPath!);
+    List<List<dynamic>> rows = inventory.map((item) => [item.name, item.quantity]).toList();
+    await file.writeAsString(const ListToCsvConverter().convert(rows));
   }
 
   void addItem(InventoryItem item) {
     setState(() {
       inventory.add(item);
       filteredInventory = List.from(inventory);
-      saveInventory();
     });
+    _saveInventory();
   }
 
   void updateItem(InventoryItem updatedItem, {String? oldName}) {
@@ -258,7 +301,6 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       String nameToFind = oldName ?? updatedItem.name;
       int index = inventory.indexWhere((item) => item.name == nameToFind);
       if (index != -1) {
-        // If the name changed, remove the old item first
         if (oldName != null && oldName != updatedItem.name) {
           inventory.removeAt(index);
           inventory.add(updatedItem);
@@ -266,9 +308,9 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
           inventory[index] = updatedItem;
         }
         filteredInventory = List.from(inventory);
-        saveInventory();
       }
     });
+    _saveInventory();
   }
 
   void filterInventory(String query) {
@@ -298,6 +340,9 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   builder: (context) => SettingsScreen(
                     onThemeChanged: widget.onThemeChanged,
                     currentThemeMode: widget.currentThemeMode,
+                    csvPath: widget.csvPath,
+                    onCsvPathChanged: widget.onCsvPathChanged,
+                    onReloadInventory: _loadInventory,
                   ),
                 ),
               );
@@ -317,7 +362,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
               child: TextField(
                 controller: searchController,
                 focusNode: searchFocusNode,
-                autofocus: false, // Ensure this is set to false
+                autofocus: false,
                 decoration: InputDecoration(
                   labelText: 'Search',
                   prefixIcon: Icon(Icons.search),
@@ -374,7 +419,7 @@ class AddItemScreen extends StatefulWidget {
   final Function(InventoryItem, {String? oldName})? updateItem;
   final InventoryItem? itemToEdit;
 
-  AddItemScreen({required this.addItem, this.updateItem, this.itemToEdit});
+  const AddItemScreen({super.key, required this.addItem, this.updateItem, this.itemToEdit});
 
   @override
   _AddItemScreenState createState() => _AddItemScreenState();
@@ -410,7 +455,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
               controller: nameController,
               decoration: InputDecoration(labelText: 'Item Name'),
             ),
-            SizedBox(height: 24), // Added spacing
+            SizedBox(height: 24),
             if (!isEditing)
               Column(
                 children: [
@@ -419,7 +464,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                     decoration: InputDecoration(labelText: 'Quantity'),
                     keyboardType: TextInputType.number,
                   ),
-                  SizedBox(height: 24), // Added spacing
+                  SizedBox(height: 24),
                 ],
               ),
             if (isEditing) ...[
@@ -428,7 +473,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                 decoration: InputDecoration(labelText: 'Amount to Add/Remove'),
                 keyboardType: TextInputType.number,
               ),
-              SizedBox(height: 24), // Added spacing
+              SizedBox(height: 24),
               Row(
                 children: [
                   Expanded(
@@ -513,7 +558,6 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       );
                       return;
                     }
-                    // Save name change only, keep quantity the same
                     widget.updateItem!(
                       InventoryItem(
                         name: newName,
@@ -574,8 +618,17 @@ class InventoryItem {
 class SettingsScreen extends StatefulWidget {
   final void Function(ThemeMode)? onThemeChanged;
   final ThemeMode? currentThemeMode;
+  final String? csvPath;
+  final void Function(String)? onCsvPathChanged;
+  final Future<void> Function()? onReloadInventory;
 
-  SettingsScreen({this.onThemeChanged, this.currentThemeMode});
+  const SettingsScreen({super.key, 
+    this.onThemeChanged,
+    this.currentThemeMode,
+    this.csvPath,
+    this.onCsvPathChanged,
+    this.onReloadInventory,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -583,11 +636,13 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late ThemeMode _selectedTheme;
+  String? _csvPath;
 
   @override
   void initState() {
     super.initState();
     _selectedTheme = widget.currentThemeMode ?? ThemeMode.system;
+    _csvPath = widget.csvPath;
   }
 
   void _changeTheme(ThemeMode? mode) {
@@ -597,6 +652,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
       });
       if (widget.onThemeChanged != null) {
         widget.onThemeChanged!(mode);
+      }
+    }
+  }
+
+  Future<void> _pickCsvFile() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      dialogTitle: 'Select Inventory CSV File',
+      type: FileType.custom,
+      allowedExtensions: ['csv'],
+    );
+    if (result != null && result.files.single.path != null) {
+      String path = result.files.single.path!;
+      if (widget.onCsvPathChanged != null) {
+        widget.onCsvPathChanged!(path);
+      }
+      setState(() {
+        _csvPath = path;
+      });
+      if (widget.onReloadInventory != null) {
+        await widget.onReloadInventory!();
       }
     }
   }
@@ -637,6 +712,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: ThemeMode.dark,
             groupValue: _selectedTheme,
             onChanged: _changeTheme,
+          ),
+          Divider(),
+          ListTile(
+            leading: Icon(Icons.folder),
+            title: Text('Inventory File Location'),
+            subtitle: Text(_csvPath ?? 'Not set'),
+            trailing: ElevatedButton(
+              onPressed: _pickCsvFile,
+              child: Text('Change'),
+            ),
           ),
         ],
       ),
