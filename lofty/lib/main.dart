@@ -2,6 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
+// NJSharp Full Palette
+const Color njPrimary = Color(0xFFA6C4DC);      // Powder Blue
+const Color njSecondary = Color(0xFFBDBAC3);    // French Grey
+const Color njTertiary = Color(0xFF48495D);     // Charcoal
+const Color njError = Color(0xFFFF453A);        // Red
+const Color njBackground = Color(0xFFA6C4DC);   // Powder Blue
+const Color njSurface = Color(0xFFFFFFFF);      // White surface
+const Color njOnPrimary = Color(0xFFFFFFFF);    // On blue
+const Color njOnSecondary = Color(0xFF000000);  // On green
+const Color njOnTertiary = Color(0xFF000000);   // On orange
+const Color njOnError = Color(0xFFFFFFFF);      // On red
+const Color njOnBackground = Color(0xFF1C1C1E); // On light background
+const Color njOnSurface = Color(0xFF1C1C1E);    // On white
+
+const Color njDarkBackground = Color(0xFF232436); // Dark background
+const Color njDarkSurface = Color(0xFF232436);    // Dark surface
+const Color njDarkOnBackground = Color(0xFF333353);
+const Color njDarkOnSurface = Color(0xFFF2F2F7);
+
 void main() {
   runApp(MyApp());
 }
@@ -13,11 +32,77 @@ class MyApp extends StatelessWidget {
       title: 'Inventory App',
       theme: ThemeData(
         brightness: Brightness.light,
-        primarySwatch: Colors.blue,
+        primaryColor: njPrimary,
+        colorScheme: ColorScheme(
+          brightness: Brightness.light,
+          primary: njPrimary,
+          onPrimary: njOnPrimary,
+          secondary: njSecondary,
+          onSecondary: njOnSecondary,
+          error: njError,
+          onError: njOnError,
+          background: njBackground,
+          onBackground: njOnBackground,
+          surface: njSurface,
+          onSurface: njOnSurface,
+        ),
+        scaffoldBackgroundColor: njBackground,
+        appBarTheme: AppBarTheme(
+          backgroundColor: njPrimary,
+          foregroundColor: njOnPrimary,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: njPrimary,
+            foregroundColor: njOnPrimary,
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: njSurface,
+          border: OutlineInputBorder(),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: njError,
+          contentTextStyle: TextStyle(color: njOnError),
+        ),
       ),
       darkTheme: ThemeData(
         brightness: Brightness.dark,
-        primarySwatch: Colors.blue,
+        primaryColor: njPrimary,
+        colorScheme: ColorScheme(
+          brightness: Brightness.dark,
+          primary: njPrimary,
+          onPrimary: njOnPrimary,
+          secondary: njSecondary,
+          onSecondary: njOnSecondary,
+          error: njError,
+          onError: njOnError,
+          background: njDarkBackground,
+          onBackground: njDarkOnBackground,
+          surface: njDarkSurface,
+          onSurface: njDarkOnSurface,
+        ),
+        scaffoldBackgroundColor: njDarkBackground,
+        appBarTheme: AppBarTheme(
+          backgroundColor: njPrimary,
+          foregroundColor: njOnPrimary,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: njPrimary,
+            foregroundColor: njOnPrimary,
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: njDarkSurface,
+          border: OutlineInputBorder(),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: njError,
+          contentTextStyle: TextStyle(color: njOnError),
+        ),
       ),
       themeMode: ThemeMode.system,
       home: InventoryListScreen(),
@@ -34,11 +119,19 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   List<InventoryItem> inventory = [];
   List<InventoryItem> filteredInventory = [];
   TextEditingController searchController = TextEditingController();
+  FocusNode? searchFocusNode;
 
   @override
   void initState() {
     super.initState();
     loadInventory();
+    searchFocusNode = FocusNode();
+  }
+
+  @override
+  void dispose() {
+    searchFocusNode?.dispose();
+    super.dispose();
   }
 
   loadInventory() async {
@@ -102,45 +195,53 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Inventory List'),
+        title: Text('Lofty | Inventory'),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              controller: searchController,
-              decoration: InputDecoration(
-                labelText: 'Search',
-                prefixIcon: Icon(Icons.search),
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
+          FocusScope.of(context).unfocus();
+        },
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: TextField(
+                controller: searchController,
+                focusNode: searchFocusNode,
+                autofocus: false, // Ensure this is set to false
+                decoration: InputDecoration(
+                  labelText: 'Search',
+                  prefixIcon: Icon(Icons.search),
+                ),
+                onChanged: filterInventory,
               ),
-              onChanged: filterInventory,
             ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: filteredInventory.length,
-              itemBuilder: (context, index) {
-                return ListTile(
-                  title: Text(filteredInventory[index].name),
-                  subtitle: Text('Quantity: ${filteredInventory[index].quantity}'),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => AddItemScreen(
-                          addItem: addItem,
-                          updateItem: (item, {String? oldName}) => updateItem(item, oldName: oldName),
-                          itemToEdit: filteredInventory[index],
+            Expanded(
+              child: ListView.builder(
+                itemCount: filteredInventory.length,
+                itemBuilder: (context, index) {
+                  return ListTile(
+                    title: Text(filteredInventory[index].name),
+                    subtitle: Text('Quantity: ${filteredInventory[index].quantity}'),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AddItemScreen(
+                            addItem: addItem,
+                            updateItem: (item, {String? oldName}) => updateItem(item, oldName: oldName),
+                            itemToEdit: filteredInventory[index],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                );
-              },
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -201,11 +302,17 @@ class _AddItemScreenState extends State<AddItemScreen> {
               controller: nameController,
               decoration: InputDecoration(labelText: 'Item Name'),
             ),
+            SizedBox(height: 24), // Added spacing
             if (!isEditing)
-              TextField(
-                controller: quantityController,
-                decoration: InputDecoration(labelText: 'Quantity'),
-                keyboardType: TextInputType.number,
+              Column(
+                children: [
+                  TextField(
+                    controller: quantityController,
+                    decoration: InputDecoration(labelText: 'Quantity'),
+                    keyboardType: TextInputType.number,
+                  ),
+                  SizedBox(height: 24), // Added spacing
+                ],
               ),
             if (isEditing) ...[
               TextField(
@@ -213,7 +320,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
                 decoration: InputDecoration(labelText: 'Amount to Add/Remove'),
                 keyboardType: TextInputType.number,
               ),
-              SizedBox(height: 20),
+              SizedBox(height: 24), // Added spacing
               Row(
                 children: [
                   Expanded(
@@ -312,8 +419,6 @@ class _AddItemScreenState extends State<AddItemScreen> {
                 ),
               ),
             ],
-            if (!isEditing)
-              SizedBox(height: 20),
             if (!isEditing)
               ElevatedButton(
                 onPressed: () {
