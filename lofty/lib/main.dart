@@ -68,11 +68,18 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     });
   }
 
-  void updateItem(InventoryItem updatedItem) {
+  void updateItem(InventoryItem updatedItem, {String? oldName}) {
     setState(() {
-      int index = inventory.indexWhere((item) => item.name == updatedItem.name);
+      String nameToFind = oldName ?? updatedItem.name;
+      int index = inventory.indexWhere((item) => item.name == nameToFind);
       if (index != -1) {
-        inventory[index] = updatedItem;
+        // If the name changed, remove the old item first
+        if (oldName != null && oldName != updatedItem.name) {
+          inventory.removeAt(index);
+          inventory.add(updatedItem);
+        } else {
+          inventory[index] = updatedItem;
+        }
         filteredInventory = List.from(inventory);
         saveInventory();
       }
@@ -123,7 +130,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                       MaterialPageRoute(
                         builder: (context) => AddItemScreen(
                           addItem: addItem,
-                          updateItem: updateItem,
+                          updateItem: (item, {String? oldName}) => updateItem(item, oldName: oldName),
                           itemToEdit: filteredInventory[index],
                         ),
                       ),
@@ -155,7 +162,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
 
 class AddItemScreen extends StatefulWidget {
   final Function(InventoryItem) addItem;
-  final Function(InventoryItem)? updateItem;
+  final Function(InventoryItem, {String? oldName})? updateItem;
   final InventoryItem? itemToEdit;
 
   AddItemScreen({required this.addItem, this.updateItem, this.itemToEdit});
@@ -167,21 +174,24 @@ class AddItemScreen extends StatefulWidget {
 class _AddItemScreenState extends State<AddItemScreen> {
   TextEditingController nameController = TextEditingController();
   TextEditingController quantityController = TextEditingController();
+  late String originalName;
 
   @override
   void initState() {
     super.initState();
     if (widget.itemToEdit != null) {
       nameController.text = widget.itemToEdit!.name;
-      quantityController.text = widget.itemToEdit!.quantity.toString();
+      quantityController.text = '';
+      originalName = widget.itemToEdit!.name;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isEditing = widget.itemToEdit != null;
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.itemToEdit == null ? 'Add Item' : 'Edit Item'),
+        title: Text(isEditing ? 'Edit Item' : 'Add Item'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -191,32 +201,135 @@ class _AddItemScreenState extends State<AddItemScreen> {
               controller: nameController,
               decoration: InputDecoration(labelText: 'Item Name'),
             ),
-            TextField(
-              controller: quantityController,
-              decoration: InputDecoration(labelText: 'Quantity'),
-              keyboardType: TextInputType.number,
-            ),
-            SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                String name = nameController.text;
-                int quantity = int.tryParse(quantityController.text) ?? 0;
-                if (name.isNotEmpty && quantity > 0) {
-                  InventoryItem newItem = InventoryItem(name: name, quantity: quantity);
-                  if (widget.itemToEdit == null) {
-                    widget.addItem(newItem);
+            if (!isEditing)
+              TextField(
+                controller: quantityController,
+                decoration: InputDecoration(labelText: 'Quantity'),
+                keyboardType: TextInputType.number,
+              ),
+            if (isEditing) ...[
+              TextField(
+                controller: quantityController,
+                decoration: InputDecoration(labelText: 'Amount to Add/Remove'),
+                keyboardType: TextInputType.number,
+              ),
+              SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        int change = int.tryParse(quantityController.text) ?? 0;
+                        String newName = nameController.text.trim();
+                        if (newName.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Enter a valid name.')),
+                          );
+                          return;
+                        }
+                        if (change > 0) {
+                          int newQuantity = widget.itemToEdit!.quantity + change;
+                          widget.updateItem!(
+                            InventoryItem(
+                              name: newName,
+                              quantity: newQuantity,
+                            ),
+                            oldName: originalName,
+                          );
+                          Navigator.pop(context);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Enter a valid amount to add.')),
+                          );
+                        }
+                      },
+                      child: Text('Add'),
+                    ),
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        int change = int.tryParse(quantityController.text) ?? 0;
+                        String newName = nameController.text.trim();
+                        int currentStock = widget.itemToEdit!.quantity;
+                        if (newName.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Enter a valid name.')),
+                          );
+                          return;
+                        }
+                        if (change > 0) {
+                          if (change > currentStock) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Cannot remove more than is in stock.')),
+                            );
+                            return;
+                          }
+                          int newQuantity = currentStock - change;
+                          widget.updateItem!(
+                            InventoryItem(
+                              name: newName,
+                              quantity: newQuantity,
+                            ),
+                            oldName: originalName,
+                          );
+                          Navigator.pop(context);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Enter a valid amount to remove.')),
+                          );
+                        }
+                      },
+                      child: Text('Remove'),
+                    ),
+                  ),
+                ],
+              ),
+              Spacer(),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    String newName = nameController.text.trim();
+                    if (newName.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Enter a valid name.')),
+                      );
+                      return;
+                    }
+                    // Save name change only, keep quantity the same
+                    widget.updateItem!(
+                      InventoryItem(
+                        name: newName,
+                        quantity: widget.itemToEdit!.quantity,
+                      ),
+                      oldName: originalName,
+                    );
+                    Navigator.pop(context);
+                  },
+                  child: Text('Save'),
+                ),
+              ),
+            ],
+            if (!isEditing)
+              SizedBox(height: 20),
+            if (!isEditing)
+              ElevatedButton(
+                onPressed: () {
+                  String name = nameController.text.trim();
+                  int quantity = int.tryParse(quantityController.text) ?? 0;
+                  if (name.isNotEmpty && quantity > 0) {
+                    widget.addItem(InventoryItem(name: name, quantity: quantity));
+                    Navigator.pop(context);
                   } else {
-                    widget.updateItem!(newItem);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Please enter a valid name and quantity.')),
+                    );
                   }
-                  Navigator.pop(context);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Please enter a valid name and quantity.')),
-                  );
-                }
-              },
-              child: Text(widget.itemToEdit == null ? 'Add Item' : 'Update Item'),
-            ),
+                },
+                child: Text('Add Item'),
+              ),
           ],
         ),
       ),
