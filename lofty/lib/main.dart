@@ -25,7 +25,48 @@ void main() {
   runApp(MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  ThemeMode _themeMode = ThemeMode.system;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+
+  void _loadTheme() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? themeString = prefs.getString('themeMode');
+    setState(() {
+      if (themeString == 'light') {
+        _themeMode = ThemeMode.light;
+      } else if (themeString == 'dark') {
+        _themeMode = ThemeMode.dark;
+      } else {
+        _themeMode = ThemeMode.system;
+      }
+    });
+  }
+
+  void _setTheme(ThemeMode mode) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _themeMode = mode;
+    });
+    if (mode == ThemeMode.light) {
+      prefs.setString('themeMode', 'light');
+    } else if (mode == ThemeMode.dark) {
+      prefs.setString('themeMode', 'dark');
+    } else {
+      prefs.setString('themeMode', 'system');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -104,13 +145,21 @@ class MyApp extends StatelessWidget {
           contentTextStyle: TextStyle(color: njOnError),
         ),
       ),
-      themeMode: ThemeMode.system,
-      home: InventoryListScreen(),
+      themeMode: _themeMode,
+      home: InventoryListScreen(
+        onThemeChanged: _setTheme,
+        currentThemeMode: _themeMode,
+      ),
     );
   }
 }
 
 class InventoryListScreen extends StatefulWidget {
+  final void Function(ThemeMode)? onThemeChanged;
+  final ThemeMode? currentThemeMode;
+
+  InventoryListScreen({this.onThemeChanged, this.currentThemeMode});
+
   @override
   _InventoryListScreenState createState() => _InventoryListScreenState();
 }
@@ -196,6 +245,22 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Lofty | Inventory'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => SettingsScreen(
+                    onThemeChanged: widget.onThemeChanged,
+                    currentThemeMode: widget.currentThemeMode,
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
@@ -459,6 +524,79 @@ class InventoryItem {
     return InventoryItem(
       name: json['name'],
       quantity: json['quantity'],
+    );
+  }
+}
+
+class SettingsScreen extends StatefulWidget {
+  final void Function(ThemeMode)? onThemeChanged;
+  final ThemeMode? currentThemeMode;
+
+  SettingsScreen({this.onThemeChanged, this.currentThemeMode});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  late ThemeMode _selectedTheme;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedTheme = widget.currentThemeMode ?? ThemeMode.system;
+  }
+
+  void _changeTheme(ThemeMode? mode) {
+    if (mode != null) {
+      setState(() {
+        _selectedTheme = mode;
+      });
+      if (widget.onThemeChanged != null) {
+        widget.onThemeChanged!(mode);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Settings'),
+      ),
+      body: ListView(
+        children: [
+          ListTile(
+            leading: Icon(Icons.info_outline),
+            title: Text('About'),
+            subtitle: Text('Lofty Inventory App\nVersion 1.0.0'),
+          ),
+          Divider(),
+          ListTile(
+            leading: Icon(Icons.color_lens),
+            title: Text('Theme'),
+            subtitle: Text('Choose app appearance'),
+          ),
+          RadioListTile<ThemeMode>(
+            title: Text('Device Theme'),
+            value: ThemeMode.system,
+            groupValue: _selectedTheme,
+            onChanged: _changeTheme,
+          ),
+          RadioListTile<ThemeMode>(
+            title: Text('Light'),
+            value: ThemeMode.light,
+            groupValue: _selectedTheme,
+            onChanged: _changeTheme,
+          ),
+          RadioListTile<ThemeMode>(
+            title: Text('Dark'),
+            value: ThemeMode.dark,
+            groupValue: _selectedTheme,
+            onChanged: _changeTheme,
+          ),
+        ],
+      ),
     );
   }
 }
